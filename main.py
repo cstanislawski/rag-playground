@@ -50,12 +50,11 @@ def display_help(multi_turn=False):
     [bold]Available commands:[/bold]
     [cyan]help[/cyan]    : Display this help message
     [cyan]exit[/cyan]    : Exit the program
+    [cyan]clear[/cyan]   : Clear the screen
     [cyan]Ctrl+C[/cyan]  : Force exit the program
     """
     if multi_turn:
-        help_text += (
-            "[cyan]clear[/cyan]   : Clear the conversation history and screen\n"
-        )
+        help_text += "[cyan]clear history[/cyan] : Clear the conversation history\n"
 
     help_text += """
     [bold]Tips:[/bold]
@@ -82,6 +81,10 @@ def continuous_mode():
             elif query.lower() == "help":
                 display_help(multi_turn=False)
                 continue
+            elif query.lower() == "clear":
+                clear_screen()
+                console.print("[bold magenta]Screen cleared.[/bold magenta]")
+                continue
             search(query)
         except KeyboardInterrupt:
             handle_exit(None, None)
@@ -100,10 +103,13 @@ def multi_turn_mode():
             if query.lower() == "exit":
                 break
             elif query.lower() == "clear":
-                context = []
                 clear_screen()
+                console.print("[bold magenta]Screen cleared.[/bold magenta]")
+                continue
+            elif query.lower() == "clear history":
+                context = []
                 console.print(
-                    "[bold magenta]Conversation history cleared and screen cleared.[/bold magenta]"
+                    "[bold magenta]Conversation history cleared.[/bold magenta]"
                 )
                 continue
             elif query.lower() == "help":
@@ -145,7 +151,7 @@ def main():
         "-m",
         "--multi-turn",
         action="store_true",
-        help="Enable multi-turn mode for interactive conversation with context",
+        help="Enable multi-turn mode for interactive conversation with context, implies continuous mode",
     )
 
     args = parser.parse_args()
