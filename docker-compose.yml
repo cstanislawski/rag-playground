@@ -1,23 +1,21 @@
 services:
   postgres:
-    container_name: postgres
-    image: timescale/timescaledb-ha:pg16.4-ts2.16.1-all-oss
-    # build:
-    #   context: ./docker/postgres
-    #   dockerfile: ./Dockerfile
-    ports:
-      - "5432:5432"
+    build:
+      context: ./docker/postgres
+      dockerfile: ./Dockerfile
+    container_name: postgres_pgvector
     environment:
+      POSTGRES_DB: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
-    # command: ["postgres", "-c", "shared_preload_libraries=pgvector"]
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
