@@ -1,3 +1,5 @@
 psycopg2-binary
 numpy
 ollama
+python-dotenv
+rich

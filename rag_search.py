@@ -2,41 +2,81 @@ import psycopg2
 import numpy as np
 import ollama
 from typing import List, Tuple
+import os
+from dotenv import load_dotenv
+import logging
+import httpx
+from rich.logging import RichHandler
+
+load_dotenv()
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+
+logger = logging.getLogger("rag")
+
+
+class LoggingClient(httpx.Client):
+    def send(self, request, **kwargs):
+        logger.debug(f"HTTP Request: {request.method} {request.url}")
+        response = super().send(request, **kwargs)
+        logger.debug(f"HTTP Response: {response.status_code}")
+        return response
+
+
+ollama.client = LoggingClient()
 
 
 def connect_to_db():
-    return psycopg2.connect(
-        host="localhost", database="postgres", user="postgres", password="postgres"
-    )
+    try:
+        return psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST"),
+            port=os.getenv("POSTGRES_PORT"),
+            database=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+        )
+    except psycopg2.Error as e:
+        logger.error(f"Unable to connect to the database: {e}")
+        raise
 
 
 def vector_similarity_search(
     query: str, max_price: float = float("inf"), n: int = 5
 ) -> List[Tuple[int, str, str, float, float]]:
-    # Generate embedding for the query
-    query_embedding = ollama.embeddings(model="nomic-embed-text", prompt=query)[
-        "embedding"
-    ]
+    try:
+        query_embedding = ollama.embeddings(
+            model=os.getenv("EMBEDDINGS_MODEL_NAME"), prompt=query
+        )["embedding"]
+    except Exception as e:
+        logger.error(f"Error generating embedding for query: {e}")
+        raise
 
     conn = connect_to_db()
     cur = conn.cursor()
 
-    # Perform similarity search with price filter
-    cur.execute(
-        """
-        SELECT id, name, description, price, 1 - (embedding <=> %s::vector) AS similarity
-        FROM products
-        WHERE price <= %s
-        ORDER BY similarity DESC
-        LIMIT %s
-    """,
-        (query_embedding, max_price, n),
-    )
-
-    results = cur.fetchall()
-
-    cur.close()
-    conn.close()
+    try:
+        cur.execute(
+            """
+            SELECT id, name, description, price, 1 - (embedding <=> %s::vector) AS similarity
+            FROM products
+            WHERE price <= %s
+            ORDER BY similarity DESC
+            LIMIT %s
+            """,
+            (query_embedding, max_price, n),
+        )
+        results = cur.fetchall()
+    except psycopg2.Error as e:
+        logger.error(f"Error executing similarity search query: {e}")
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
     return results
 
@@ -44,7 +84,6 @@ def vector_similarity_search(
 def generate_response(
     query: str, results: List[Tuple[int, str, str, float, float]]
 ) -> str:
-    # Prepare context from search results
     context = "\n".join(
         [
             f"Product: {name}\nDescription: {desc[:200]}...\nPrice: ${price:.2f}"
@@ -52,7 +91,6 @@ def generate_response(
         ]
     )
 
-    # Prepare prompt for gemma2:2b
     prompt = f"""Given the following product descriptions:
 
 {context}
@@ -62,32 +100,37 @@ Please answer the following query from a customer:
 
 Provide a helpful response based on the given product information. Be concise and informative. Refer to products by their names and include their prices."""
 
-    # Generate response using gemma2:2b
-    response = ollama.generate(model="gemma2:2b", prompt=prompt)
-
-    return response["response"]
+    try:
+        response = ollama.generate(
+            model=os.getenv("TEXT_GEN_MODEL_NAME"), prompt=prompt
+        )
+        return response["response"]
+    except Exception as e:
+        logger.error(f"Error generating response: {e}")
+        raise
 
 
 def rag_pipeline(query: str) -> str:
-    # Extract price limit from query if present
+    logger.info(f"Processing query: {query}")
     max_price = float("inf")
     if "below" in query.lower() and "usd" in query.lower():
         try:
             price_str = query.lower().split("below")[1].split("usd")[0].strip()
             max_price = float(price_str.replace("$", "").strip())
+            logger.info(f"Detected price limit: ${max_price:.2f}")
         except ValueError:
-            pass  # If we can't parse the price, we'll use the default max_price
+            logger.warning("Unable to parse price from query")
 
-    # Retrieve similar products
-    results = vector_similarity_search(query, max_price)
+    try:
+        results = vector_similarity_search(query, max_price)
+        logger.info(f"Found {len(results)} relevant products")
+        response = generate_response(query, results)
+        return response
+    except Exception as e:
+        logger.error(f"Error in RAG pipeline: {e}")
+        return "I'm sorry, but I encountered an error while processing your request. Please try again later."
 
-    # Generate a response based on the retrieved information
-    response = generate_response(query, results)
 
-    return response
-
-
-# Test the RAG pipeline
 if __name__ == "__main__":
     test_queries = [
         "I need a waterproof jacket for hiking over $200 USD",

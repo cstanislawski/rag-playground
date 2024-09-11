@@ -6,7 +6,7 @@ This project implements a RAG system using Postgres with pgvector for efficient 
 
 ## Data
 
-- [seed_data.json](data/seed_data.json) - Seed data for the playground with embeddings for --products, copied over from [Azure-Samples/rag-postgres-openai-python](https://github.com/Azure-Samples/rag-postgres-openai-python)
+- [seed_data.json](data/seed_data.json) - Seed data for the playground with embeddings for products, copied over from [Azure-Samples/rag-postgres-openai-python](https://github.com/Azure-Samples/rag-postgres-openai-python)
 - [seed_data_no_embeds.json](data/seed_data_no_embeds.json) - Same seed data but without embeddings, for testing generating embeddings
 
 ## Prerequisites
@@ -36,20 +36,21 @@ This script will:
 - Pull the `nomic-embed-text` model from Ollama
 - Set up a Python virtual environment
 - Install the required Python packages
+- Create a `.env` file from `.env.example`
+
+- Update the `.env` file with your specific configuration if needed.
 
 - Start the Postgres database with pgvector:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 - Load the sample data and create embeddings:
 
 ```bash
-python3 rag_setup.py
+python main.py setup
 ```
-
-This script will load the product data from `data/seed_data_no_embeds.json`, generate embeddings using the Ollama model, and insert the data into the Postgres database.
 
 ## Usage
 
@@ -61,34 +62,44 @@ To use the RAG search functionality:
 source venv/bin/activate
 ```
 
-- Run the RAG search script:
+- Run a search query:
 
 ```bash
-python3 rag_search.py
+python main.py search --query "Your search query here"
 ```
 
-This script includes some sample queries to demonstrate the functionality. You can modify the `test_queries` list in the script to try out different queries.
+For example:
 
-- To use the RAG system in your own Python code, you can import and use the `rag_pipeline` function from `rag_search.py`:
-
-```python
-from rag_search import rag_pipeline
-
-query = "I need a waterproof jacket for hiking below $150 USD"
-response = rag_pipeline(query)
-print(response)
+```bash
+python main.py search --query "I need a waterproof jacket for hiking below $150 USD"
 ```
 
 ## Customization
 
-- To add more products or update the existing ones, modify the `data/seed_data_no_embeds.json` file and re-run the `rag_setup.py` script.
+- To add more products or update the existing ones, modify the `data/seed_data_no_embeds.json` file and re-run the setup process.
 - You can adjust the number of results returned by modifying the `n` parameter in the `vector_similarity_search` function in `rag_search.py`.
-- To use a different language model for response generation, update the `ollama.generate()` call in the `generate_response` function in `rag_search.py`.
+- To use a different language model for response generation, update the `TEXT_GEN_MODEL_NAME` in your `.env` file.
+
+## Cleanup
+
+To remove all generated files, stop containers, and clean up the project:
+
+```bash
+chmod +x cleanup.sh
+./cleanup.sh
+```
+
+This script will:
+
+- Stop and remove Docker containers
+- Remove the virtual environment
+- Delete the generated .env file
+- Remove any log files (if present)
 
 ## Troubleshooting
 
-- If you encounter issues with connecting to the database, ensure that the Postgres container is running (`docker-compose ps`) and that the connection details in the Python scripts match those in the `docker-compose.yml` file.
-- If embeddings fail to generate, make sure the Ollama service is running and the `nomic-embed-text` model is correctly installed.
+- If you encounter issues with connecting to the database, ensure that the Postgres container is running (`docker compose ps`) and that the connection details in your `.env` file match those in the `docker compose.yml` file.
+- If embeddings fail to generate, make sure the Ollama service is running and the specified embedding model is correctly installed.
 
 ## License
 

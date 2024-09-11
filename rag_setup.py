@@ -2,66 +2,120 @@ import json
 import psycopg2
 from psycopg2.extras import execute_values
 import ollama
-import numpy as np
+import os
+from dotenv import load_dotenv
+import logging
 
-# Load the data
-with open("data/seed_data_no_embeds.json", "r") as f:
-    data = json.load(f)
+load_dotenv()
 
-# Generate embeddings
-for item in data:
-    description = item["description"]
-    embedding = ollama.embeddings(model="nomic-embed-text", prompt=description)
-    item["embedding"] = embedding["embedding"]
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
-# Connect to the database
-conn = psycopg2.connect(
-    host="localhost", database="postgres", user="postgres", password="postgres"
-)
 
-# Create a cursor
-cur = conn.cursor()
+def connect_to_db():
+    try:
+        return psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST"),
+            port=os.getenv("POSTGRES_PORT"),
+            database=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+        )
+    except psycopg2.Error as e:
+        logger.error(f"Unable to connect to the database: {e}")
+        raise
 
-# Create the table
-cur.execute(
+
+def load_data():
+    try:
+        with open("data/seed_data_no_embeds.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.error("seed_data_no_embeds.json file not found")
+        raise
+    except json.JSONDecodeError:
+        logger.error("Error decoding JSON from seed_data_no_embeds.json")
+        raise
+
+
+def generate_embeddings(data):
+    embeddings_model = os.getenv("EMBEDDINGS_MODEL_NAME")
+    for item in data:
+        try:
+            embedding = ollama.embeddings(
+                model=embeddings_model, prompt=item["description"]
+            )
+            item["embedding"] = embedding["embedding"]
+        except Exception as e:
+            logger.error(f"Error generating embedding for item {item['id']}: {e}")
+            item["embedding"] = None
+    return data
+
+
+def create_table(cur):
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS products (
+                id SERIAL PRIMARY KEY,
+                type VARCHAR(255),
+                brand VARCHAR(255),
+                name VARCHAR(255),
+                description TEXT,
+                price FLOAT,
+                embedding vector(768)
+            )
+        """
+        )
+    except psycopg2.Error as e:
+        logger.error(f"Error creating table: {e}")
+        raise
+
+
+def insert_data(cur, data):
+    insert_query = """
+        INSERT INTO products (type, brand, name, description, price, embedding)
+        VALUES %s
     """
-    CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        type VARCHAR(255),
-        brand VARCHAR(255),
-        name VARCHAR(255),
-        description TEXT,
-        price FLOAT,
-        embedding vector(768)
-    )
-"""
-)
+    values = [
+        (
+            item["type"],
+            item["brand"],
+            item["name"],
+            item["description"],
+            item["price"],
+            item["embedding"],
+        )
+        for item in data
+        if item["embedding"] is not None
+    ]
+    try:
+        execute_values(cur, insert_query, values)
+    except psycopg2.Error as e:
+        logger.error(f"Error inserting data: {e}")
+        raise
 
-# Insert the data
-insert_query = """
-    INSERT INTO products (type, brand, name, description, price, embedding)
-    VALUES %s
-"""
 
-values = [
-    (
-        item["type"],
-        item["brand"],
-        item["name"],
-        item["description"],
-        item["price"],
-        item["embedding"],
-    )
-    for item in data
-]
+def main():
+    logger.info("Starting data loading process")
+    data = load_data()
+    data_with_embeddings = generate_embeddings(data)
 
-execute_values(cur, insert_query, values)
+    conn = connect_to_db()
+    cur = conn.cursor()
 
-# Commit the changes
-conn.commit()
+    try:
+        create_table(cur)
+        insert_data(cur, data_with_embeddings)
+        conn.commit()
+        logger.info("Data loaded successfully!")
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+    finally:
+        cur.close()
+        conn.close()
 
-# Close the cursor and connection
-cur.close()
-conn.close()
 
-print("Data loaded successfully!")
+if __name__ == "__main__":
+    main()
