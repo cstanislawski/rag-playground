@@ -1,4 +1,4 @@
-# RAG
+# RAG Playground
 
 Playground for RAG (Retrieval-Augmented Generation) locally / on-prem
 
