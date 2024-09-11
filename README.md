@@ -77,7 +77,7 @@ python3 main.py search --query "Your search query here"
 Example:
 
 ```bash
-python3 main.py search --query "I need a waterproof jacket for hiking below $1- USD"
+python3 main.py search --query "I need a waterproof jacket for hiking below $200 USD"
 ```
 
 ### Continuous Mode
@@ -133,7 +133,7 @@ If you encounter any issues:
 3. Verify that your `.env` file is configured correctly.
 4. If you're having database connection issues, ensure that the Postgres container is running and that the connection details in your `.env` file are correct.
 
-If problems persist, please open an issue in the GitHub repository with a detailed description of the error and the steps to reproduce it.
+If problems persist - good luck!
 
 ## License
 
