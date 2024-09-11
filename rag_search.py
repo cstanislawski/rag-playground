@@ -1,7 +1,7 @@
 import psycopg2
 import numpy as np
 import ollama
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import os
 from dotenv import load_dotenv
 import logging
@@ -82,9 +82,9 @@ def vector_similarity_search(
 
 
 def generate_response(
-    query: str, results: List[Tuple[int, str, str, float, float]]
+    query: str, results: List[Tuple[int, str, str, float, float]], context: str = ""
 ) -> str:
-    context = "\n".join(
+    product_context = "\n".join(
         [
             f"Product: {name}\nDescription: {desc[:200]}...\nPrice: ${price:.2f}"
             for _, name, desc, price, _ in results
@@ -93,12 +93,15 @@ def generate_response(
 
     prompt = f"""Given the following product descriptions:
 
+{product_context}
+
+Conversation history:
 {context}
 
 Please answer the following query from a customer:
 "{query}"
 
-Provide a helpful response based on the given product information. Be concise and informative. Refer to products by their names and include their prices."""
+Provide a helpful response based on the given product information and the conversation history. Be concise and informative. Refer to products by their names and include their prices."""
 
     try:
         response = ollama.generate(
@@ -110,7 +113,9 @@ Provide a helpful response based on the given product information. Be concise an
         raise
 
 
-def rag_pipeline(query: str) -> str:
+def rag_pipeline(
+    query: str, context: str = "", return_results: bool = False
+) -> Union[str, Tuple[str, List[Tuple[int, str, str, float, float]]]]:
     logger.info(f"Processing query: {query}")
     max_price = float("inf")
     if "below" in query.lower() and "usd" in query.lower():
@@ -124,11 +129,16 @@ def rag_pipeline(query: str) -> str:
     try:
         results = vector_similarity_search(query, max_price)
         logger.info(f"Found {len(results)} relevant products")
-        response = generate_response(query, results)
+        response = generate_response(query, results, context)
+        if return_results:
+            return response, results
         return response
     except Exception as e:
         logger.error(f"Error in RAG pipeline: {e}")
-        return "I'm sorry, but I encountered an error while processing your request. Please try again later."
+        error_message = "I'm sorry, but I encountered an error while processing your request. Please try again later."
+        if return_results:
+            return error_message, []
+        return error_message
 
 
 if __name__ == "__main__":
